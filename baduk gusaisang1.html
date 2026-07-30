@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>웹 바둑판 - 완벽 사석 자동 제거</title>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      background-color: #f4f4f9;
+      font-family: 'Malgun Gothic', 'Pretendard', sans-serif;
+    }
+
+    .status-panel {
+      margin-bottom: 12px;
+      padding: 12px 24px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      font-size: 1.05rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .stat-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .turn-indicator {
+      font-weight: bold;
+      color: #333;
+    }
+
+    .toggle-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      user-select: none;
+      font-weight: bold;
+      color: #2b6cb0;
+    }
+
+    .toggle-label input {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+
+    .board-outer {
+      position: relative;
+      background-color: #DCB35C;
+      padding: 25px;
+      border-radius: 6px;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.25);
+      border: 3px solid #b38f46;
+    }
+
+    canvas {
+      display: block;
+      cursor: pointer;
+    }
+
+    .controls-container {
+      margin-top: 15px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .nav-controls, .action-controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    button {
+      padding: 8px 14px;
+      font-size: 0.95rem;
+      border: none;
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-weight: bold;
+    }
+
+    .btn-nav { background-color: #4a5568; }
+    .btn-nav:hover { background-color: #2d3748; }
+
+    .btn-share { background-color: #805ad5; }
+    .btn-share:hover { background-color: #6b46c1; }
+
+    .btn-capture { background-color: #3182ce; }
+    .btn-capture:hover { background-color: #2b6cb0; }
+
+    .btn-sgf { background-color: #38a169; }
+    .btn-sgf:hover { background-color: #2f855a; }
+
+    .btn-reset { background-color: #e53e3e; }
+    .btn-reset:hover { background-color: #c53030; }
+  </style>
+</head>
+<body>
+
+  <div class="status-panel">
+    <div class="stat-item turn-indicator" id="turnStatus">현재: ⚫ 흑돌 (0수)</div>
+    <div class="stat-item">
+      <span>사석:</span>
+      <span id="blackCaptured">⚫ 0</span> / 
+      <span id="whiteCaptured">⚪ 0</span>
+    </div>
+    <label class="toggle-label">
+      <input type="checkbox" id="toggleMoveNumbers" checked onchange="drawBoard()">
+      수순 표시
+    </label>
+  </div>
+
+  <div class="board-outer">
+    <canvas id="board" width="560" height="560"></canvas>
+  </div>
+
+  <div class="controls-container">
+    <div class="nav-controls">
+      <button class="btn-nav" onclick="goToMove(0)">│< 처음</button>
+      <button class="btn-nav" onclick="moveStep(-5)">◀◀ 5수</button>
+      <button class="btn-nav" onclick="moveStep(-1)">◀ 1수</button>
+      <button class="btn-nav" onclick="moveStep(1)">1수 ▶</button>
+      <button class="btn-nav" onclick="moveStep(5)">5수 ▶▶</button>
+      <button class="btn-nav" onclick="goToMove(fullHistory.length)">끝 >│</button>
+    </div>
+
+    <div class="action-controls">
+      <button class="btn-share" onclick="copyShareUrl()">🔗 주소복사</button>
+      <button class="btn-capture" onclick="captureBoard()">장면 캡쳐</button>
+      <button class="btn-sgf" onclick="exportSGF()">SGF 저장</button>
+      <button class="btn-reset" onclick="resetBoard()">새 판 시작</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('board');
+    const ctx = canvas.getContext('2d');
+    const turnStatus = document.getElementById('turnStatus');
+    const toggleMoveNumbers = document.getElementById('toggleMoveNumbers');
+    const blackCapturedEl = document.getElementById('blackCaptured');
+    const whiteCapturedEl = document.getElementById('whiteCaptured');
+
+    const BOARD_SIZE = 19;
+    const PADDING = 20;
+    const CELL_SIZE = (canvas.width - PADDING * 2) / (BOARD_SIZE - 1);
+
+    let fullHistory = [];
+    let currentMoveIndex = 0;
+
+    const starPoints = [3, 9, 15];
+    const sgfCoords = "abcdefghijklmnopqrstuvwxyz";
+
+    // --- 바둑 핵심 로직: 상하좌우 탐색 ---
+    function getNeighbors(x, y) {
+      const res = [];
+      if (x > 0) res.push({x: x - 1, y: y});
+      if (x < BOARD_SIZE - 1) res.push({x: x + 1, y: y});
+      if (y > 0) res.push({x: x, y: y - 1});
+      if (y < BOARD_SIZE - 1) res.push({x: x, y: y + 1});
+      return res;
+    }
+
+    // 연결된 같은 색 돌 그룹 찾기
+    function getConnectedGroup(grid, startX, startY) {
+      const color = grid[startX][startY];
+      if (color === 0) return { group: [], liberties: 0 };
+
+      const group = [];
+      const visited = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(false));
+      const libertiesSet = new Set();
+      const queue = [{x: startX, y: startY}];
+      visited[startX][startY] = true;
+
+      while (queue.length > 0) {
+        const curr = queue.shift();
+        group.push(curr);
+
+        const neighbors = getNeighbors(curr.x, curr.y);
+        for (let i = 0; i < neighbors.length; i++) {
+          const n = neighbors[i];
+          const nColor = grid[n.x][n.y];
+
+          if (nColor === 0) {
+            libertiesSet.add(`${n.x}_${n.y}`);
+          } else if (nColor === color && !visited[n.x][n.y]) {
+            visited[n.x][n.y] = true;
+            queue.push(n);
+          }
+        }
+      }
+
+      return { group, liberties: libertiesSet.size };
+    }
+
+    // 현재 판 상태 가져오기
+    function getCurrentState() {
+      if (currentMoveIndex === 0) {
+        return {
+          boardState: Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0)),
+          blackCaptures: 0,
+          whiteCaptures: 0
+        };
+      }
+      const last = fullHistory[currentMoveIndex - 1];
+      return {
+        boardState: last.boardSnapshot,
+        blackCaptures: last.blackCaptures,
+        whiteCaptures: last.whiteCaptures
+      };
+    }
+
+    function drawBoard() {
+      const { boardState, blackCaptures, whiteCaptures } = getCurrentState();
+
+      // 사석 현황 표시
+      blackCapturedEl.innerText = `⚫ ${blackCaptures}`;
+      whiteCapturedEl.innerText = `⚪ ${whiteCaptures}`;
+
+      // 1. 판 배경
+      ctx.fillStyle = '#DCB35C';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // 2. 격자선
+      ctx.strokeStyle = '#222';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < BOARD_SIZE; i++) {
+        ctx.beginPath();
+        ctx.moveTo(PADDING + i * CELL_SIZE, PADDING);
+        ctx.lineTo(PADDING + i * CELL_SIZE, canvas.height - PADDING);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(PADDING, PADDING + i * CELL_SIZE);
+        ctx.lineTo(canvas.width - PADDING, PADDING + i * CELL_SIZE);
+        ctx.stroke();
+      }
+
+      // 3. 화점
+      starPoints.forEach(x => {
+        starPoints.forEach(y => {
+          ctx.beginPath();
+          ctx.arc(PADDING + x * CELL_SIZE, PADDING + y * CELL_SIZE, 4, 0, Math.PI * 2);
+          ctx.fillStyle = '#111';
+          ctx.fill();
+        });
+      });
+
+      // 4. 바둑알 그리기
+      for (let x = 0; x < BOARD_SIZE; x++) {
+        for (let y = 0; y < BOARD_SIZE; y++) {
+          if (boardState[x][y] !== 0) {
+            drawStone(x, y, boardState[x][y]);
+          }
+        }
+      }
+    }
+
+    function drawStone(x, y, color) {
+      const cx = PADDING + x * CELL_SIZE;
+      const cy = PADDING + y * CELL_SIZE;
+      const radius = CELL_SIZE * 0.46;
+
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+      ctx.shadowBlur = radius * 0.3;
+      ctx.shadowOffsetX = radius * 0.15;
+      ctx.shadowOffsetY = radius * 0.18;
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      if (color === 1) { // 흑돌
+        const gradient = ctx.createRadialGradient(
+          cx - radius * 0.3, cy - radius * 0.3, radius * 0.05,
+          cx, cy, radius
+        );
+        gradient.addColorStop(0, '#666666');
+        gradient.addColorStop(0.3, '#222222');
+        gradient.addColorStop(0.85, '#0a0a0a');
+        gradient.addColorStop(1, '#000000');
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+      } else { // 백돌
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.fillStyle = '#e8e2d8';
+        ctx.fill();
+
+        const gradient = ctx.createRadialGradient(
+          cx - radius * 0.32, cy - radius * 0.35, radius * 0.08,
+          cx, cy, radius
+        );
+        gradient.addColorStop(0, '#ffffff');       
+        gradient.addColorStop(0.25, '#fbf8f3');    
+        gradient.addColorStop(0.75, '#eae3d5');    
+        gradient.addColorStop(0.93, '#d1c7b7');    
+        gradient.addColorStop(1, '#a89c8a');       
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+      }
+
+      // 수순 및 착수점 표시
+      const visibleHistory = fullHistory.slice(0, currentMoveIndex);
+      const moveInfo = visibleHistory.find(h => h.x === x && h.y === y && h.alive);
+      if (!moveInfo) return;
+
+      const isLastMove = (moveInfo === visibleHistory[visibleHistory.length - 1]);
+      const showNumbers = toggleMoveNumbers.checked;
+
+      if (showNumbers) {
+        ctx.font = `bold ${CELL_SIZE * 0.5}px 'Arial'`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = (color === 1) ? (isLastMove ? '#ff4d4d' : '#ffffff') : (isLastMove ? '#cc0000' : '#222222');
+        ctx.fillText(moveInfo.moveNumber, cx, cy + 1);
+      } else if (isLastMove) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * 0.25, 0, Math.PI * 2);
+        ctx.fillStyle = (color === 1) ? '#ff4d4d' : '#cc0000';
+        ctx.fill();
+      }
+    }
+
+    // 착수 클릭 이벤트
+    canvas.addEventListener('click', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+
+      const x = Math.round((clickX - PADDING) / CELL_SIZE);
+      const y = Math.round((clickY - PADDING) / CELL_SIZE);
+
+      if (x < 0 || x >= BOARD_SIZE || y < 0 || y >= BOARD_SIZE) return;
+
+      const { boardState, blackCaptures, whiteCaptures } = getCurrentState();
+
+      // 이미 돌이 놓여진 자리는 무시
+      if (boardState[x][y] !== 0) return;
+
+      // 과거 탐색 중 착수하면 이후 히스토리 정리
+      if (currentMoveIndex < fullHistory.length) {
+        fullHistory = fullHistory.slice(0, currentMoveIndex);
+      }
+
+      const turn = (fullHistory.length % 2 === 0) ? 1 : 2; // 1: 흑, 2: 백
+      const opponent = turn === 1 ? 2 : 1;
+
+      // 1. 임시로 돌 놓기
+      const nextBoard = boardState.map(row => [...row]);
+      nextBoard[x][y] = turn;
+
+      // 2. 주변 상대 돌 그룹 중 활로가 0이 된 사석 찾아내기
+      let capturedStones = [];
+      const neighbors = getNeighbors(x, y);
+
+      neighbors.forEach(n => {
+        if (nextBoard[n.x][n.y] === opponent) {
+          const { group, liberties } = getConnectedGroup(nextBoard, n.x, n.y);
+          if (liberties === 0) {
+            capturedStones = capturedStones.concat(group);
+          }
+        }
+      });
+
+      // 3. 자충수 판정 (상대 돌을 따내지 못하는데 내 돌의 활로가 0인 경우)
+      if (capturedStones.length === 0) {
+        const selfInfo = getConnectedGroup(nextBoard, x, y);
+        if (selfInfo.liberties === 0) {
+          alert('자충수입니다! 이곳에는 돌을 둘 수 없습니다.');
+          return;
+        }
+      }
+
+      // 4. 따낸 상대 돌을 바둑판에서 완전히 제거 (0으로 지정)
+      capturedStones.forEach(pt => {
+        nextBoard[pt.x][pt.y] = 0;
+      });
+
+      const addCap = capturedStones.length;
+      const newBlackCap = blackCaptures + (turn === 1 ? addCap : 0);
+      const newWhiteCap = whiteCaptures + (turn === 2 ? addCap : 0);
+
+      // 히스토리에 새 상태 기록
+      fullHistory.push({
+        x, y,
+        color: turn,
+        moveNumber: fullHistory.length + 1,
+        boardSnapshot: nextBoard,
+        blackCaptures: newBlackCap,
+        whiteCaptures: newWhiteCap,
+        alive: true
+      });
+
+      currentMoveIndex = fullHistory.length;
+      updateStatus();
+      drawBoard();
+    });
+
+    function moveStep(delta) { goToMove(currentMoveIndex + delta); }
+
+    function goToMove(targetIndex) {
+      if (targetIndex < 0) targetIndex = 0;
+      if (targetIndex > fullHistory.length) targetIndex = fullHistory.length;
+
+      currentMoveIndex = targetIndex;
+      updateStatus();
+      drawBoard();
+    }
+
+    function updateStatus() {
+      const nextTurn = (currentMoveIndex % 2 === 0) ? '⚫ 흑돌' : '⚪ 백돌';
+      turnStatus.innerText = `현재: ${currentMoveIndex}수 / 총 ${fullHistory.length}수 (다음: ${nextTurn})`;
+    }
+
+    function resetBoard() {
+      if (confirm('바둑판을 초기화하시겠습니까?')) {
+        fullHistory = [];
+        currentMoveIndex = 0;
+        window.history.pushState({}, '', window.location.pathname);
+        updateStatus();
+        drawBoard();
+      }
+    }
+
+    function copyShareUrl() {
+      if (fullHistory.length === 0) { alert('돌을 놓은 후 주소를 복사해 주세요.'); return; }
+      const activeHistory = fullHistory.slice(0, currentMoveIndex);
+      const movesString = activeHistory.map(h => `${h.x}_${h.y}`).join(',');
+      const baseUrl = window.location.origin + window.location.pathname;
+      const shareUrl = `${baseUrl}?moves=${movesString}`;
+
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        alert(`${currentMoveIndex}수까지 진행된 주소가 복사되었습니다!`);
+      });
+    }
+
+    function captureBoard() {
+      const dataURL = canvas.toDataURL('image/png');
+      const downloadLink = document.createElement('a');
+      downloadLink.download = `baduk_${currentMoveIndex}moves.png`;
+      downloadLink.href = dataURL;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+    }
+
+    function exportSGF() {
+      if (fullHistory.length === 0) { alert('기보가 없습니다.'); return; }
+      let sgfContent = "(;GM[1]FF[4]CA[UTF-8]AP[WebBaduk]SZ[19]\nPB[Black]PW[White]\n";
+      fullHistory.forEach(h => {
+        sgfContent += `;${h.color === 1 ? "B" : "W"}[${sgfCoords[h.x]}${sgfCoords[h.y]}]`;
+      });
+      sgfContent += ")";
+
+      const blob = new Blob([sgfContent], { type: "application/x-go-sgf;charset=utf-8" });
+      const downloadLink = document.createElement("a");
+      downloadLink.download = `game_${fullHistory.length}moves.sgf`;
+      downloadLink.href = URL.createObjectURL(blob);
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+    }
+
+    // URL 파싱 초기화
+    function initFromUrl() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const movesParam = urlParams.get('moves');
+
+      fullHistory = [];
+      if (movesParam) {
+        const movePairs = movesParam.split(',');
+        let tempBoard = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
+        let turn = 1;
+        let blackCapCount = 0;
+        let whiteCapCount = 0;
+
+        movePairs.forEach(pair => {
+          if (!pair) return;
+          const [x, y] = pair.split('_').map(Number);
+          if (!isNaN(x) && !isNaN(y) && x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE) {
+            tempBoard[x][y] = turn;
+            const opponent = turn === 1 ? 2 : 1;
+
+            let capturedStones = [];
+            getNeighbors(x, y).forEach(n => {
+              if (tempBoard[n.x][n.y] === opponent) {
+                const { group, liberties } = getConnectedGroup(tempBoard, n.x, n.y);
+                if (liberties === 0) capturedStones = capturedStones.concat(group);
+              }
+            });
+
+            capturedStones.forEach(pt => { tempBoard[pt.x][pt.y] = 0; });
+
+            if (turn === 1) blackCapCount += capturedStones.length;
+            else whiteCapCount += capturedStones.length;
+
+            fullHistory.push({
+              x, y,
+              color: turn,
+              moveNumber: fullHistory.length + 1,
+              boardSnapshot: tempBoard.map(row => [...row]),
+              blackCaptures: blackCapCount,
+              whiteCaptures: whiteCapCount,
+              alive: true
+            });
+
+            turn = opponent;
+          }
+        });
+      }
+      currentMoveIndex = fullHistory.length;
+    }
+
+    initFromUrl();
+    drawBoard();
+    updateStatus();
+  </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
