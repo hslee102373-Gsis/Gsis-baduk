@@ -2,8 +2,9 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>GSIS 웹바둑판</title>
+  <!-- 손가락 확대/축소(Pinch Zoom) 가능하도록 설정 변경 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <title>지시스(GSIS) 웹 바둑판</title>
   <!-- 검증된 GIF 생성 라이브러리 (gifshot) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gifshot/0.3.2/gifshot.min.js"></script>
   <style>
@@ -21,7 +22,6 @@
       padding: 8px;
       background-color: #f4f4f9;
       font-family: 'Malgun Gothic', 'Pretendard', sans-serif;
-      touch-action: manipulation;
     }
 
     .main-container {
@@ -87,6 +87,7 @@
       display: flex;
       justify-content: center;
       align-items: center;
+      touch-action: manipulation;
     }
 
     canvas {
@@ -104,7 +105,7 @@
       gap: 6px;
     }
 
-    /* 상단 이동 버튼: 정확히 한 줄(6등분) 배치 */
+    /* 이동 버튼: 1줄 (6등분) */
     .nav-controls {
       display: grid;
       grid-template-columns: repeat(6, 1fr);
@@ -112,7 +113,7 @@
       width: 100%;
     }
 
-    /* 하단 기능 버튼: 정확히 한 줄(5등분) 배치 */
+    /* 기능 버튼: 1줄 (5등분) */
     .action-controls {
       display: grid;
       grid-template-columns: repeat(5, 1fr);
@@ -174,7 +175,6 @@
     </div>
 
     <div class="controls-container">
-      <!-- 1줄째: 이동 컨트롤 (6개 버튼) -->
       <div class="nav-controls">
         <button class="btn-nav" onclick="goToMove(0)">│< 처음</button>
         <button class="btn-nav" onclick="moveStep(-5)">◀◀ 5수</button>
@@ -184,7 +184,6 @@
         <button class="btn-nav" onclick="goToMove(fullHistory.length)">끝 >│</button>
       </div>
 
-      <!-- 2줄째: 액션 컨트롤 (5개 버튼) -->
       <div class="action-controls">
         <button class="btn-scene" onclick="convertToScene()">📷 장면도</button>
         <button class="btn-gif" id="gifBtn" onclick="createGifAnimation()">🎬 GIF</button>
@@ -456,13 +455,23 @@
       });
     }
 
+    // 화면 확대 시에도 좌표 정밀 보정 터치 로직
     function handleBoardClick(e) {
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
 
-      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      let clientX, clientY;
+      if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else if (e.changedTouches && e.changedTouches.length > 0) {
+        clientX = e.changedTouches[0].clientX;
+        clientY = e.changedTouches[0].clientY;
+      } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+      }
 
       const clickX = (clientX - rect.left) * scaleX;
       const clickY = (clientY - rect.top) * scaleY;
