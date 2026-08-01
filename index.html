@@ -2,7 +2,6 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <!-- 손가락 확대/축소(Pinch Zoom) 가능하도록 설정 변경 -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
   <title>GSIS 웹바둑판</title>
   <!-- 검증된 GIF 생성 라이브러리 (gifshot) -->
@@ -105,7 +104,6 @@
       gap: 6px;
     }
 
-    /* 이동 버튼: 1줄 (6등분) */
     .nav-controls {
       display: grid;
       grid-template-columns: repeat(6, 1fr);
@@ -113,7 +111,6 @@
       width: 100%;
     }
 
-    /* 기능 버튼: 1줄 (5등분) */
     .action-controls {
       display: grid;
       grid-template-columns: repeat(5, 1fr);
@@ -165,7 +162,8 @@
         <span id="deadWhiteStones">⚪ 0</span>
       </div>
       <label class="toggle-label">
-        <input type="checkbox" id="toggleMoveNumbers" checked onchange="drawBoard()">
+        <!-- 기본값을 체크 해제(unchecked)로 설정 -->
+        <input type="checkbox" id="toggleMoveNumbers" onchange="drawBoard()">
         수순
       </label>
     </div>
@@ -373,12 +371,20 @@
       const isLastMove = (moveInfo === visibleHistory[visibleHistory.length - 1]);
       const showNumbers = toggleMoveNumbers.checked;
 
+      // 수순 표시가 켜져 있을 때
       if (showNumbers) {
         ctx.font = `bold ${CELL_SIZE * 0.48}px 'Arial'`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = (color === 1) ? (isLastMove ? '#ff4d4d' : '#ffffff') : (isLastMove ? '#cc0000' : '#222222');
         ctx.fillText(moveInfo.moveNumber, cx, cy + 1);
+      } 
+      // 수순 표시가 꺼져 있을 때: 마지막 수의 중앙에 선명한 빨간색 점(·) 표시
+      else if (isLastMove) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * 0.22, 0, Math.PI * 2);
+        ctx.fillStyle = '#ff3333';
+        ctx.fill();
       }
     }
 
@@ -455,7 +461,6 @@
       });
     }
 
-    // 화면 확대 시에도 좌표 정밀 보정 터치 로직
     function handleBoardClick(e) {
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
