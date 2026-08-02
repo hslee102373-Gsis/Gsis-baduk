@@ -5,16 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
   <title>GSIS 웹바둑판</title>
   
-  <!-- 카카오톡 미리보기(Open Graph) 설정 -->
   <meta property="og:title" content="GSIS 웹바둑판">
-  <meta property="og:description" content="여기를 눌러 링크를 확인하세요.">
+  <meta property="og:description" content="바둑판 기보 공유">
 
-  <!-- 검증된 GIF 생성 라이브러리 (gifshot) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gifshot/0.3.2/gifshot.min.js"></script>
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       display: flex;
@@ -167,7 +163,6 @@
         <span id="deadWhiteStones">⚪ 0</span>
       </div>
       <label class="toggle-label">
-        <!-- 수순 표시 기본값을 해제(unchecked)로 설정 -->
         <input type="checkbox" id="toggleMoveNumbers" onchange="drawBoard()">
         수순
       </label>
@@ -220,23 +215,35 @@
     const starPoints = [3, 9, 15];
     const sgfCoords = "abcdefghijklmnopqrstuvwxyz";
 
-    // --- 🔗 주소 길이 축소(압축) 함수 ---
-    function compressMoves(history) {
-      return history.map(h => {
-        const code = (h.x * 19) + h.y;
-        return String.fromCharCode(code + 33);
-      }).join('');
+    // --- 🔗 안전한 URL 압축 / 해제 함수 ---
+    function encodeMoves(history) {
+      const bytes = new Uint8Array(history.length);
+      for (let i = 0; i < history.length; i++) {
+        bytes[i] = (history[i].x * 19) + history[i].y;
+      }
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     }
 
-    function decompressMoves(compressedStr) {
-      const moves = [];
-      for (let i = 0; i < compressedStr.length; i++) {
-        const code = compressedStr.charCodeAt(i) - 33;
-        const x = Math.floor(code / 19);
-        const y = code % 19;
-        moves.push({ x, y });
+    function decodeMoves(str) {
+      try {
+        let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+        while (base64.length % 4) base64 += '=';
+        const binary = atob(base64);
+        const moves = [];
+        for (let i = 0; i < binary.length; i++) {
+          const code = binary.charCodeAt(i);
+          const x = Math.floor(code / 19);
+          const y = code % 19;
+          moves.push({ x, y });
+        }
+        return moves;
+      } catch (e) {
+        return [];
       }
-      return moves;
     }
 
     function getNeighbors(x, y) {
@@ -327,6 +334,7 @@
         });
       });
 
+      // 바둑판 위 돌 그리기
       for (let x = 0; x < BOARD_SIZE; x++) {
         for (let y = 0; y < BOARD_SIZE; y++) {
           if (boardState[x][y] !== 0) {
@@ -388,8 +396,16 @@
         ctx.fill();
       }
 
+      // 수순 정보 추적 로직 수정 (해당 위치의 가장 최근 착수 수순 매칭)
       const visibleHistory = fullHistory.slice(0, currentMoveIndex);
-      const moveInfo = visibleHistory.find(h => h.x === x && h.y === y && h.alive);
+      let moveInfo = null;
+      for (let i = visibleHistory.length - 1; i >= 0; i--) {
+        if (visibleHistory[i].x === x && visibleHistory[i].y === y) {
+          moveInfo = visibleHistory[i];
+          break;
+        }
+      }
+
       if (!moveInfo) return;
 
       const isLastMove = (moveInfo === visibleHistory[visibleHistory.length - 1]);
@@ -416,7 +432,7 @@
         return;
       }
 
-      if (confirm('현재 배치를 [기본 장면도]로 변환하시겠습니까?\n\n이전 수순 정보는 완전히 삭제되며, 이후부터 두는 수가 1수부터 새로 시작됩니다.')) {
+      if (confirm('현재 배치를 [기본 장면도]로 변환하시겠습니까?\n\n이전 수순 정보는 삭제되며 1수부터 다시 시작됩니다.')) {
         const { boardState, deadBlackCount, deadWhiteCount } = getCurrentState();
 
         fullHistory = [];
@@ -429,13 +445,13 @@
         currentMoveIndex = 0;
         updateStatus();
         drawBoard();
-        alert('장면도로 고정되었습니다! 이제부터 두는 돌은 1수부터 시작됩니다.');
+        alert('장면도로 변환되었습니다.');
       }
     }
 
     async function createGifAnimation() {
       if (fullHistory.length === 0) {
-        alert('GIF로 만들 수순(기보)이 없습니다.');
+        alert('GIF로 만들 수순이 없습니다.');
         return;
       }
 
@@ -471,7 +487,7 @@
           document.body.appendChild(downloadLink);
           downloadLink.click();
           document.body.removeChild(downloadLink);
-          alert('GIF 애니메이션이 성공적으로 생성되었습니다!');
+          alert('GIF 애니메이션이 생성되었습니다.');
         } else {
           alert('GIF 생성 중 오류가 발생했습니다.');
         }
@@ -537,7 +553,7 @@
       if (capturedStones.length === 0) {
         const selfInfo = getConnectedGroup(nextBoard, x, y);
         if (selfInfo.liberties === 0) {
-          alert('자충수입니다! 이곳에는 돌을 둘 수 없습니다.');
+          alert('자충수입니다. 이곳에는 둘 수 없습니다.');
           return;
         }
       }
@@ -557,8 +573,7 @@
         moveNumber: fullHistory.length + 1,
         boardSnapshot: nextBoard,
         deadBlackCount: newDeadBlack,
-        deadWhiteCount: newDeadWhite,
-        alive: true
+        deadWhiteCount: newDeadWhite
       });
 
       currentMoveIndex = fullHistory.length;
@@ -584,17 +599,19 @@
       turnStatus.innerText = `현재: ${currentMoveIndex}수 / 총 ${fullHistory.length}수 (다음: ${nextTurn})`;
     }
 
-    // 🔗 단축 압축 주소 복사
+    // 주소 복사 기능 (사석/수식 없이 깔끔한 알림만 출력)
     function copyShareUrl() {
-      if (fullHistory.length === 0 && currentMoveIndex === 0) { alert('돌을 놓은 후 주소를 복사해 주세요.'); return; }
+      if (fullHistory.length === 0 && currentMoveIndex === 0) { 
+        alert('돌을 놓은 후 주소를 복사해 주세요.'); 
+        return; 
+      }
       const activeHistory = fullHistory.slice(0, currentMoveIndex);
-      
-      const compressedStr = compressMoves(activeHistory);
+      const compressedStr = encodeMoves(activeHistory);
       const baseUrl = window.location.origin + window.location.pathname;
-      const shareUrl = `${baseUrl}?m=${encodeURIComponent(compressedStr)}`;
+      const shareUrl = `${baseUrl}?m=${compressedStr}`;
 
       navigator.clipboard.writeText(shareUrl).then(() => {
-        alert(`${currentMoveIndex}수까지 진행된 주소가 복사되었습니다!\n(카톡에 깔끔하게 공유됩니다)`);
+        alert('주소가 복사되었습니다.');
       });
     }
 
@@ -684,8 +701,7 @@
             moveNumber: fullHistory.length + 1,
             boardSnapshot: tempBoard.map(row => [...row]),
             deadBlackCount: deadBlack,
-            deadWhiteCount: deadWhite,
-            alive: true
+            deadWhiteCount: deadWhite
           });
 
           turn = opponent;
@@ -701,10 +717,9 @@
       fullHistory = [];
 
       if (compressedParam) {
-        const moves = decompressMoves(decodeURIComponent(compressedParam));
+        const moves = decodeMoves(compressedParam);
         processMoveList(moves);
       } else if (oldMovesParam) {
-        // 기존 오픈형 긴 주소 호환
         const movePairs = oldMovesParam.split(',');
         const moves = movePairs.map(p => {
           if (!p) return null;
