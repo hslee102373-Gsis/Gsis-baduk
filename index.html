@@ -2,22 +2,20 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
   <title>GSIS 웹바둑판</title>
   
   <!-- 카카오톡 미리보기(Open Graph) 설정 -->
   <meta property="og:title" content="GSIS 웹바둑판">
   <meta property="og:description" content="여기를 눌러 링크를 확인하세요.">
 
-  <!-- GIF 인코더 (메인/백업 로딩) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/omggif/1.0.10/omggif.min.js"></script>
-  <script>
-    if (typeof omggif === 'undefined') {
-      document.write('<script src="https://cdn.jsdelivr.net/npm/omggif@1.0.10/omggif.js"><\/script>');
-    }
-  </script>
-
+  <!-- 검증된 GIF 생성 라이브러리 (gifshot) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gifshot/0.3.2/gifshot.min.js"></script>
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       display: flex;
       flex-direction: column;
@@ -25,28 +23,38 @@
       justify-content: center;
       min-height: 100vh;
       margin: 0;
+      padding: 8px;
       background-color: #f4f4f9;
       font-family: 'Malgun Gothic', 'Pretendard', sans-serif;
     }
 
+    .main-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 580px;
+    }
+
     .status-panel {
-      margin-bottom: 12px;
-      padding: 12px 24px;
+      width: 100%;
+      margin-bottom: 8px;
+      padding: 6px 10px;
       background: white;
       border-radius: 8px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
       display: flex;
-      gap: 20px;
+      gap: 8px;
       align-items: center;
-      font-size: 1.05rem;
+      font-size: 0.82rem;
       flex-wrap: wrap;
-      justify-content: center;
+      justify-content: space-around;
     }
 
     .stat-item {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 4px;
     }
 
     .turn-indicator {
@@ -57,7 +65,7 @@
     .toggle-label {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 4px;
       cursor: pointer;
       user-select: none;
       font-weight: bold;
@@ -65,49 +73,68 @@
     }
 
     .toggle-label input {
-      width: 16px;
-      height: 16px;
+      width: 14px;
+      height: 14px;
       cursor: pointer;
     }
 
     .board-outer {
       position: relative;
       background-color: #DCB35C;
-      padding: 12px;
+      padding: 8px;
       border-radius: 6px;
-      box-shadow: 0 12px 28px rgba(0,0,0,0.25);
-      border: 3px solid #b38f46;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+      border: 2px solid #b38f46;
+      width: 100%;
+      max-width: 560px;
+      aspect-ratio: 1 / 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      touch-action: manipulation;
     }
 
     canvas {
       display: block;
       cursor: pointer;
+      width: 100% !important;
+      height: 100% !important;
     }
 
     .controls-container {
-      margin-top: 15px;
+      margin-top: 8px;
+      width: 100%;
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      align-items: center;
+      gap: 6px;
     }
 
-    .nav-controls, .action-controls {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      justify-content: center;
+    .nav-controls {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 4px;
+      width: 100%;
+    }
+
+    .action-controls {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 4px;
+      width: 100%;
     }
 
     button {
-      padding: 8px 14px;
-      font-size: 0.95rem;
+      padding: 8px 2px;
+      font-size: 0.75rem;
       border: none;
-      border-radius: 6px;
+      border-radius: 5px;
       color: white;
       cursor: pointer;
       transition: all 0.2s ease;
       font-weight: bold;
+      width: 100%;
+      text-align: center;
+      white-space: nowrap;
     }
 
     .btn-nav { background-color: #4a5568; }
@@ -127,47 +154,46 @@
 
     .btn-sgf { background-color: #38a169; }
     .btn-sgf:hover { background-color: #2f855a; }
-
-    .btn-reset { background-color: #e53e3e; }
-    .btn-reset:hover { background-color: #c53030; }
   </style>
 </head>
 <body>
 
-  <div class="status-panel">
-    <div class="stat-item turn-indicator" id="turnStatus">현재: ⚫ 흑돌 (0수)</div>
-    <div class="stat-item">
-      <span>사석(잡힌 돌):</span>
-      <span id="deadBlackStones">⚫ 0</span> / 
-      <span id="deadWhiteStones">⚪ 0</span>
-    </div>
-    <label class="toggle-label">
-      <input type="checkbox" id="toggleMoveNumbers" checked onchange="drawBoard()">
-      수순 표시
-    </label>
-  </div>
-
-  <div class="board-outer">
-    <canvas id="board" width="560" height="560"></canvas>
-  </div>
-
-  <div class="controls-container">
-    <div class="nav-controls">
-      <button class="btn-nav" onclick="goToMove(0)">│< 처음</button>
-      <button class="btn-nav" onclick="moveStep(-5)">◀◀ 5수</button>
-      <button class="btn-nav" onclick="moveStep(-1)">◀ 1수</button>
-      <button class="btn-nav" onclick="moveStep(1)">1수 ▶</button>
-      <button class="btn-nav" onclick="moveStep(5)">5수 ▶▶</button>
-      <button class="btn-nav" onclick="goToMove(fullHistory.length)">끝 >│</button>
+  <div class="main-container">
+    <div class="status-panel">
+      <div class="stat-item turn-indicator" id="turnStatus">현재: ⚫ 흑 (0수)</div>
+      <div class="stat-item">
+        <span>사석:</span>
+        <span id="deadBlackStones">⚫ 0</span> / 
+        <span id="deadWhiteStones">⚪ 0</span>
+      </div>
+      <label class="toggle-label">
+        <!-- 수순 표시 기본값을 해제(unchecked)로 설정 -->
+        <input type="checkbox" id="toggleMoveNumbers" onchange="drawBoard()">
+        수순
+      </label>
     </div>
 
-    <div class="action-controls">
-      <button class="btn-scene" onclick="convertToScene()">📷 장면도</button>
-      <button class="btn-gif" id="gifBtn" onclick="createGifAnimation()">🎬 GIF 만들기</button>
-      <button class="btn-share" onclick="copyShareUrl()">🔗 주소복사</button>
-      <button class="btn-capture" onclick="captureBoard()">장면 캡쳐</button>
-      <button class="btn-sgf" onclick="exportSGF()">SGF 저장</button>
-      <button class="btn-reset" onclick="resetBoard()">새 판 시작</button>
+    <div class="board-outer">
+      <canvas id="board" width="560" height="560"></canvas>
+    </div>
+
+    <div class="controls-container">
+      <div class="nav-controls">
+        <button class="btn-nav" onclick="goToMove(0)">│< 처음</button>
+        <button class="btn-nav" onclick="moveStep(-5)">◀◀ 5수</button>
+        <button class="btn-nav" onclick="moveStep(-1)">◀ 1수</button>
+        <button class="btn-nav" onclick="moveStep(1)">1수 ▶</button>
+        <button class="btn-nav" onclick="moveStep(5)">5수 ▶▶</button>
+        <button class="btn-nav" onclick="goToMove(fullHistory.length)">끝 >│</button>
+      </div>
+
+      <div class="action-controls">
+        <button class="btn-scene" onclick="convertToScene()">📷 장면도</button>
+        <button class="btn-gif" id="gifBtn" onclick="createGifAnimation()">🎬 GIF</button>
+        <button class="btn-share" onclick="copyShareUrl()">🔗 주소복사</button>
+        <button class="btn-capture" onclick="captureBoard()">🖼️ 캡쳐</button>
+        <button class="btn-sgf" onclick="exportSGF()">📁 SGF</button>
+      </div>
     </div>
   </div>
 
@@ -194,12 +220,11 @@
     const starPoints = [3, 9, 15];
     const sgfCoords = "abcdefghijklmnopqrstuvwxyz";
 
-    // --- 🔗 카카오톡 주소 길이 단축(압축) 알고리즘 ---
+    // --- 🔗 주소 길이 축소(압축) 함수 ---
     function compressMoves(history) {
-      // 바둑판 좌표 (x, y)를 64진수 문자로 압축 (0~18 -> 바이트화)
       return history.map(h => {
         const code = (h.x * 19) + h.y;
-        return String.fromCharCode(code + 33); // printable ASCII
+        return String.fromCharCode(code + 33);
       }).join('');
     }
 
@@ -327,7 +352,7 @@
       ctx.fill();
       ctx.restore();
 
-      if (color === 1) { // 흑돌
+      if (color === 1) {
         const gradient = ctx.createRadialGradient(
           cx - radius * 0.3, cy - radius * 0.3, radius * 0.05,
           cx, cy, radius
@@ -341,7 +366,7 @@
         ctx.arc(cx, cy, radius, 0, Math.PI * 2);
         ctx.fillStyle = gradient;
         ctx.fill();
-      } else { // 백돌
+      } else {
         ctx.beginPath();
         ctx.arc(cx, cy, radius, 0, Math.PI * 2);
         ctx.fillStyle = '#e8e2d8';
@@ -376,6 +401,12 @@
         ctx.textBaseline = 'middle';
         ctx.fillStyle = (color === 1) ? (isLastMove ? '#ff4d4d' : '#ffffff') : (isLastMove ? '#cc0000' : '#222222');
         ctx.fillText(moveInfo.moveNumber, cx, cy + 1);
+      } 
+      else if (isLastMove) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * 0.22, 0, Math.PI * 2);
+        ctx.fillStyle = '#ff3333';
+        ctx.fill();
       }
     }
 
@@ -402,38 +433,7 @@
       }
     }
 
-    function createOptimizedPalette() {
-      const palette = [];
-      for (let r = 0; r < 6; r++) {
-        for (let g = 0; g < 6; g++) {
-          for (let b = 0; b < 6; b++) {
-            const cr = Math.round(r * 255 / 5);
-            const cg = Math.round(g * 255 / 5);
-            const cb = Math.round(b * 255 / 5);
-            palette.push((cr << 16) | (cg << 8) | cb);
-          }
-        }
-      }
-      for (let i = 0; i < 40; i++) {
-        const gray = Math.round(i * 255 / 39);
-        palette.push((gray << 16) | (gray << 8) | gray);
-      }
-      return palette;
-    }
-
-    function getNearestColorIndex(r, g, b) {
-      const rIdx = Math.round(r * 5 / 255);
-      const gIdx = Math.round(g * 5 / 255);
-      const bIdx = Math.round(b * 5 / 255);
-      return rIdx * 36 + gIdx * 6 + bIdx;
-    }
-
     async function createGifAnimation() {
-      if (typeof omggif === 'undefined') {
-        alert('GIF 라이브러리를 불러오는 중입니다. 인터넷 연결 확인 후 다시 시도해 주세요.');
-        return;
-      }
-
       if (fullHistory.length === 0) {
         alert('GIF로 만들 수순(기보)이 없습니다.');
         return;
@@ -441,65 +441,67 @@
 
       const originalIndex = currentMoveIndex;
       gifBtn.disabled = true;
-      gifBtn.innerText = '⏳ GIF 생성 중...';
+      gifBtn.innerText = '⏳ 생성중';
 
-      await new Promise(r => setTimeout(r, 60));
+      await new Promise(r => setTimeout(r, 50));
 
-      try {
-        const width = canvas.width;
-        const height = canvas.height;
-        const buffer = new Uint8Array(width * height * (fullHistory.length + 1) * 2 + 1024);
-        
-        const gif = new omggif.GifWriter(buffer, width, height);
-        const palette = createOptimizedPalette();
+      const images = [];
+      for (let i = 0; i <= fullHistory.length; i++) {
+        currentMoveIndex = i;
+        drawBoard();
+        images.push(canvas.toDataURL('image/png'));
+      }
 
-        for (let i = 0; i <= fullHistory.length; i++) {
-          currentMoveIndex = i;
-          drawBoard();
+      const lastFrame = images[images.length - 1];
+      for (let k = 0; k < 10; k++) {
+        images.push(lastFrame);
+      }
 
-          const imgData = ctx.getImageData(0, 0, width, height);
-          const data = imgData.data;
-          const indexedPixels = new Uint8Array(width * height);
-
-          for (let j = 0; j < indexedPixels.length; j++) {
-            const r = data[j * 4];
-            const g = data[j * 4 + 1];
-            const b = data[j * 4 + 2];
-            indexedPixels[j] = getNearestColorIndex(r, g, b);
-          }
-
-          gif.addFrame(0, 0, width, height, indexedPixels, {
-            palette: palette,
-            delay: 100
-          });
+      gifshot.createGIF({
+        images: images,
+        gifWidth: canvas.width,
+        gifHeight: canvas.height,
+        interval: 1,
+        numWorkers: 2
+      }, function (obj) {
+        if (!obj.error) {
+          const downloadLink = document.createElement('a');
+          downloadLink.href = obj.image;
+          downloadLink.download = `baduk_game_${fullHistory.length}moves.gif`;
+          document.body.appendChild(downloadLink);
+          downloadLink.click();
+          document.body.removeChild(downloadLink);
+          alert('GIF 애니메이션이 성공적으로 생성되었습니다!');
+        } else {
+          alert('GIF 생성 중 오류가 발생했습니다.');
         }
 
-        const gifData = buffer.subarray(0, gif.end());
-        const blob = new Blob([gifData], { type: 'image/gif' });
-        
-        const downloadLink = document.createElement('a');
-        downloadLink.href = URL.createObjectURL(blob);
-        downloadLink.download = `baduk_game_${fullHistory.length}moves.gif`;
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
-
-        alert('GIF가 성공적으로 다운로드되었습니다!');
-      } catch (e) {
-        console.error(e);
-        alert('GIF 생성 중 오류가 발생했습니다.');
-      } finally {
         currentMoveIndex = originalIndex;
         drawBoard();
         gifBtn.disabled = false;
-        gifBtn.innerText = '🎬 GIF 만들기';
-      }
+        gifBtn.innerText = '🎬 GIF';
+      });
     }
 
-    canvas.addEventListener('click', (e) => {
+    function handleBoardClick(e) {
       const rect = canvas.getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      const clickY = e.clientY - rect.top;
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+
+      let clientX, clientY;
+      if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else if (e.changedTouches && e.changedTouches.length > 0) {
+        clientX = e.changedTouches[0].clientX;
+        clientY = e.changedTouches[0].clientY;
+      } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+      }
+
+      const clickX = (clientX - rect.left) * scaleX;
+      const clickY = (clientY - rect.top) * scaleY;
 
       const x = Math.round((clickX - PADDING) / CELL_SIZE);
       const y = Math.round((clickY - PADDING) / CELL_SIZE);
@@ -562,7 +564,9 @@
       currentMoveIndex = fullHistory.length;
       updateStatus();
       drawBoard();
-    });
+    }
+
+    canvas.addEventListener('click', handleBoardClick);
 
     function moveStep(delta) { goToMove(currentMoveIndex + delta); }
 
@@ -576,29 +580,15 @@
     }
 
     function updateStatus() {
-      const nextTurn = (currentMoveIndex % 2 === 0) ? '⚫ 흑돌' : '⚪ 백돌';
+      const nextTurn = (currentMoveIndex % 2 === 0) ? '⚫ 흑' : '⚪ 백';
       turnStatus.innerText = `현재: ${currentMoveIndex}수 / 총 ${fullHistory.length}수 (다음: ${nextTurn})`;
     }
 
-    function resetBoard() {
-      if (confirm('바둑판을 완전 초기화하시겠습니까?')) {
-        fullHistory = [];
-        baseBoardState = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
-        baseDeadBlack = 0;
-        baseDeadWhite = 0;
-        currentMoveIndex = 0;
-        window.history.pushState({}, '', window.location.pathname);
-        updateStatus();
-        drawBoard();
-      }
-    }
-
-    // 🔗 단축 압축 주소 생성 및 복사
+    // 🔗 단축 압축 주소 복사
     function copyShareUrl() {
       if (fullHistory.length === 0 && currentMoveIndex === 0) { alert('돌을 놓은 후 주소를 복사해 주세요.'); return; }
       const activeHistory = fullHistory.slice(0, currentMoveIndex);
       
-      // 수순 압축
       const compressedStr = compressMoves(activeHistory);
       const baseUrl = window.location.origin + window.location.pathname;
       const shareUrl = `${baseUrl}?m=${encodeURIComponent(compressedStr)}`;
@@ -619,16 +609,44 @@
     }
 
     function exportSGF() {
-      if (fullHistory.length === 0) { alert('새로 놓은 수순 기보가 없습니다.'); return; }
+      const { boardState } = getCurrentState();
+      
+      let totalStonesOnBoard = 0;
+      for (let x = 0; x < BOARD_SIZE; x++) {
+        for (let y = 0; y < BOARD_SIZE; y++) {
+          if (boardState[x][y] !== 0) totalStonesOnBoard++;
+        }
+      }
+
+      if (totalStonesOnBoard === 0 && fullHistory.length === 0) { 
+        alert('바둑판에 돌이 존재하지 않습니다.'); 
+        return; 
+      }
+
       let sgfContent = "(;GM[1]FF[4]CA[UTF-8]AP[WebBaduk]SZ[19]\nPB[Black]PW[White]\n";
+
+      let addBlackCoords = [];
+      let addWhiteCoords = [];
+
+      for (let x = 0; x < BOARD_SIZE; x++) {
+        for (let y = 0; y < BOARD_SIZE; y++) {
+          if (baseBoardState[x][y] === 1) addBlackCoords.push(`[${sgfCoords[x]}${sgfCoords[y]}]`);
+          else if (baseBoardState[x][y] === 2) addWhiteCoords.push(`[${sgfCoords[x]}${sgfCoords[y]}]`);
+        }
+      }
+
+      if (addBlackCoords.length > 0) sgfContent += `AB${addBlackCoords.join('')}\n`;
+      if (addWhiteCoords.length > 0) sgfContent += `AW${addWhiteCoords.join('')}\n`;
+
       fullHistory.forEach(h => {
         sgfContent += `;${h.color === 1 ? "B" : "W"}[${sgfCoords[h.x]}${sgfCoords[h.y]}]`;
       });
+
       sgfContent += ")";
 
       const blob = new Blob([sgfContent], { type: "application/x-go-sgf;charset=utf-8" });
       const downloadLink = document.createElement("a");
-      downloadLink.download = `game_${fullHistory.length}moves.sgf`;
+      downloadLink.download = `baduk_scene_${totalStonesOnBoard}stones.sgf`;
       downloadLink.href = URL.createObjectURL(blob);
       document.body.appendChild(downloadLink);
       downloadLink.click();
@@ -655,7 +673,7 @@
             }
           });
 
-          capturedStones.forEach(p => { tempBoard[p.x][p.y] = 0; });
+          capturedStones.forEach(pt => { tempBoard[pt.x][pt.y] = 0; });
 
           if (turn === 1) deadWhite += capturedStones.length;
           else deadBlack += capturedStones.length;
@@ -686,12 +704,13 @@
         const moves = decompressMoves(decodeURIComponent(compressedParam));
         processMoveList(moves);
       } else if (oldMovesParam) {
-        // 기존 오픈형 주소 구버전 호환
+        // 기존 오픈형 긴 주소 호환
         const movePairs = oldMovesParam.split(',');
         const moves = movePairs.map(p => {
+          if (!p) return null;
           const [x, y] = p.split('_').map(Number);
           return { x, y };
-        });
+        }).filter(Boolean);
         processMoveList(moves);
       }
 
