@@ -4,13 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
   <title>GSIS 웹바둑판</title>
-  
-  <meta property="og:title" content="GSIS 웹바둑판">
-  <meta property="og:description" content="바둑판 기보 공유">
-
+  <!-- 검증된 GIF 생성 라이브러리 (gifshot) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gifshot/0.3.2/gifshot.min.js"></script>
   <style>
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
 
     body {
       display: flex;
@@ -163,6 +162,7 @@
         <span id="deadWhiteStones">⚪ 0</span>
       </div>
       <label class="toggle-label">
+        <!-- 기본값을 체크 해제(unchecked)로 설정 -->
         <input type="checkbox" id="toggleMoveNumbers" onchange="drawBoard()">
         수순
       </label>
@@ -179,7 +179,7 @@
         <button class="btn-nav" onclick="moveStep(-1)">◀ 1수</button>
         <button class="btn-nav" onclick="moveStep(1)">1수 ▶</button>
         <button class="btn-nav" onclick="moveStep(5)">5수 ▶▶</button>
-        <button class="btn-nav" onclick="goToMove(gameHistory.length)">끝 >│</button>
+        <button class="btn-nav" onclick="goToMove(fullHistory.length)">끝 >│</button>
       </div>
 
       <div class="action-controls">
@@ -205,47 +205,15 @@
     const PADDING = 18;
     const CELL_SIZE = (canvas.width - PADDING * 2) / (BOARD_SIZE - 1);
 
-    // [핵심] 착수 기록 배열 [{x, y, color, moveNum}]
-    let gameHistory = [];
-    let currentStep = 0;
+    let fullHistory = [];
+    let currentMoveIndex = 0;
 
-    let initialBoard = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
-    let initialDeadBlack = 0;
-    let initialDeadWhite = 0;
+    let baseBoardState = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
+    let baseDeadBlack = 0;
+    let baseDeadWhite = 0;
 
     const starPoints = [3, 9, 15];
     const sgfCoords = "abcdefghijklmnopqrstuvwxyz";
-
-    // URL 안전 압축 / 해제
-    function encodeMoves(moves) {
-      const bytes = new Uint8Array(moves.length);
-      for (let i = 0; i < moves.length; i++) {
-        bytes[i] = (moves[i].x * 19) + moves[i].y;
-      }
-      let binary = '';
-      for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    }
-
-    function decodeMoves(str) {
-      try {
-        let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-        while (base64.length % 4) base64 += '=';
-        const binary = atob(base64);
-        const moves = [];
-        for (let i = 0; i < binary.length; i++) {
-          const code = binary.charCodeAt(i);
-          const x = Math.floor(code / 19);
-          const y = code % 19;
-          moves.push({ x, y });
-        }
-        return moves;
-      } catch (e) {
-        return [];
-      }
-    }
 
     function getNeighbors(x, y) {
       const res = [];
@@ -287,55 +255,27 @@
       return { group, liberties: libertiesSet.size };
     }
 
-    // 1수부터 targetStep까지의 상태를 정밀 시뮬레이션하여 렌더링용 판 상태 반환
-    function evaluateBoardAt(targetStep) {
-      let grid = initialBoard.map(row => [...row]);
-      let stoneInfoGrid = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
-      let deadB = initialDeadBlack;
-      let deadW = initialDeadWhite;
-
-      // 초기 배치 설정
-      for (let x = 0; x < BOARD_SIZE; x++) {
-        for (let y = 0; y < BOARD_SIZE; y++) {
-          if (initialBoard[x][y] !== 0) {
-            stoneInfoGrid[x][y] = { moveNum: 0, color: initialBoard[x][y] };
-          }
-        }
+    function getCurrentState() {
+      if (currentMoveIndex === 0) {
+        return {
+          boardState: baseBoardState,
+          deadBlackCount: baseDeadBlack,
+          deadWhiteCount: baseDeadWhite
+        };
       }
-
-      for (let i = 0; i < targetStep && i < gameHistory.length; i++) {
-        const move = gameHistory[i];
-        const turn = move.color;
-        const opponent = (turn === 1) ? 2 : 1;
-
-        grid[move.x][move.y] = turn;
-        stoneInfoGrid[move.x][move.y] = { moveNum: move.moveNum, color: turn };
-
-        let captured = [];
-        getNeighbors(move.x, move.y).forEach(n => {
-          if (grid[n.x][n.y] === opponent) {
-            const { group, liberties } = getConnectedGroup(grid, n.x, n.y);
-            if (liberties === 0) captured = captured.concat(group);
-          }
-        });
-
-        captured.forEach(pt => {
-          grid[pt.x][pt.y] = 0;
-          stoneInfoGrid[pt.x][pt.y] = null;
-        });
-
-        if (turn === 1) deadW += captured.length;
-        else deadB += captured.length;
-      }
-
-      return { grid, stoneInfoGrid, deadB, deadW };
+      const last = fullHistory[currentMoveIndex - 1];
+      return {
+        boardState: last.boardSnapshot,
+        deadBlackCount: last.deadBlackCount,
+        deadWhiteCount: last.deadWhiteCount
+      };
     }
 
     function drawBoard() {
-      const state = evaluateBoardAt(currentStep);
+      const { boardState, deadBlackCount, deadWhiteCount } = getCurrentState();
 
-      deadBlackStonesEl.innerText = `⚫ ${state.deadB}`;
-      deadWhiteStonesEl.innerText = `⚪ ${state.deadW}`;
+      deadBlackStonesEl.innerText = `⚫ ${deadBlackCount}`;
+      deadWhiteStonesEl.innerText = `⚪ ${deadWhiteCount}`;
 
       ctx.fillStyle = '#DCB35C';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -365,14 +305,14 @@
 
       for (let x = 0; x < BOARD_SIZE; x++) {
         for (let y = 0; y < BOARD_SIZE; y++) {
-          if (state.grid[x][y] !== 0) {
-            drawStone(x, y, state.grid[x][y], state.stoneInfoGrid[x][y]);
+          if (boardState[x][y] !== 0) {
+            drawStone(x, y, boardState[x][y]);
           }
         }
       }
     }
 
-    function drawStone(x, y, color, stoneData) {
+    function drawStone(x, y, color) {
       const cx = PADDING + x * CELL_SIZE;
       const cy = PADDING + y * CELL_SIZE;
       const radius = CELL_SIZE * 0.46;
@@ -424,19 +364,23 @@
         ctx.fill();
       }
 
-      if (!stoneData) return;
+      const visibleHistory = fullHistory.slice(0, currentMoveIndex);
+      const moveInfo = visibleHistory.find(h => h.x === x && h.y === y && h.alive);
+      if (!moveInfo) return;
 
-      const isLastPlaced = (currentStep > 0 && gameHistory[currentStep - 1].x === x && gameHistory[currentStep - 1].y === y);
+      const isLastMove = (moveInfo === visibleHistory[visibleHistory.length - 1]);
       const showNumbers = toggleMoveNumbers.checked;
 
-      if (showNumbers && stoneData.moveNum > 0) {
+      // 수순 표시가 켜져 있을 때
+      if (showNumbers) {
         ctx.font = `bold ${CELL_SIZE * 0.48}px 'Arial'`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = (color === 1) ? (isLastPlaced ? '#ff4d4d' : '#ffffff') : (isLastPlaced ? '#cc0000' : '#222222');
-        ctx.fillText(stoneData.moveNum, cx, cy + 1);
+        ctx.fillStyle = (color === 1) ? (isLastMove ? '#ff4d4d' : '#ffffff') : (isLastMove ? '#cc0000' : '#222222');
+        ctx.fillText(moveInfo.moveNumber, cx, cy + 1);
       } 
-      else if (isLastPlaced) {
+      // 수순 표시가 꺼져 있을 때: 마지막 수의 중앙에 선명한 빨간색 점(·) 표시
+      else if (isLastMove) {
         ctx.beginPath();
         ctx.arc(cx, cy, radius * 0.22, 0, Math.PI * 2);
         ctx.fillStyle = '#ff3333';
@@ -445,43 +389,43 @@
     }
 
     function convertToScene() {
-      if (currentStep === 0) {
+      if (currentMoveIndex === 0) {
         alert('돌이 하나도 올려져 있지 않습니다.');
         return;
       }
 
-      if (confirm('현재 배치를 [기본 장면도]로 변환하시겠습니까?\n\n이전 수순 정보는 삭제되며 1수부터 다시 시작됩니다.')) {
-        const state = evaluateBoardAt(currentStep);
+      if (confirm('현재 배치를 [기본 장면도]로 변환하시겠습니까?\n\n이전 수순 정보는 완전히 삭제되며, 이후부터 두는 수가 1수부터 새로 시작됩니다.')) {
+        const { boardState, deadBlackCount, deadWhiteCount } = getCurrentState();
 
-        gameHistory = [];
+        fullHistory = [];
         window.history.pushState({}, '', window.location.pathname);
 
-        initialBoard = state.grid.map(row => [...row]);
-        initialDeadBlack = state.deadB;
-        initialDeadWhite = state.deadW;
+        baseBoardState = boardState.map(row => [...row]);
+        baseDeadBlack = deadBlackCount;
+        baseDeadWhite = deadWhiteCount;
 
-        currentStep = 0;
+        currentMoveIndex = 0;
         updateStatus();
         drawBoard();
-        alert('장면도로 변환되었습니다.');
+        alert('장면도로 고정되었습니다! 이제부터 두는 돌은 1수부터 시작됩니다.');
       }
     }
 
     async function createGifAnimation() {
-      if (gameHistory.length === 0) {
-        alert('GIF로 만들 수순이 없습니다.');
+      if (fullHistory.length === 0) {
+        alert('GIF로 만들 수순(기보)이 없습니다.');
         return;
       }
 
-      const originalIndex = currentStep;
+      const originalIndex = currentMoveIndex;
       gifBtn.disabled = true;
       gifBtn.innerText = '⏳ 생성중';
 
       await new Promise(r => setTimeout(r, 50));
 
       const images = [];
-      for (let i = 0; i <= gameHistory.length; i++) {
-        currentStep = i;
+      for (let i = 0; i <= fullHistory.length; i++) {
+        currentMoveIndex = i;
         drawBoard();
         images.push(canvas.toDataURL('image/png'));
       }
@@ -501,16 +445,16 @@
         if (!obj.error) {
           const downloadLink = document.createElement('a');
           downloadLink.href = obj.image;
-          downloadLink.download = `baduk_game_${gameHistory.length}moves.gif`;
+          downloadLink.download = `baduk_game_${fullHistory.length}moves.gif`;
           document.body.appendChild(downloadLink);
           downloadLink.click();
           document.body.removeChild(downloadLink);
-          alert('GIF 애니메이션이 생성되었습니다.');
+          alert('GIF 애니메이션이 성공적으로 생성되었습니다!');
         } else {
           alert('GIF 생성 중 오류가 발생했습니다.');
         }
 
-        currentStep = originalIndex;
+        currentMoveIndex = originalIndex;
         drawBoard();
         gifBtn.disabled = false;
         gifBtn.innerText = '🎬 GIF';
@@ -542,85 +486,98 @@
 
       if (x < 0 || x >= BOARD_SIZE || y < 0 || y >= BOARD_SIZE) return;
 
-      const state = evaluateBoardAt(currentStep);
+      const { boardState, deadBlackCount, deadWhiteCount } = getCurrentState();
 
-      if (state.grid[x][y] !== 0) return;
+      if (boardState[x][y] !== 0) return;
 
-      // 중간 수순에서 새로 착수하는 경우, 그 뒤 수순은 자르고 시작
-      if (currentStep < gameHistory.length) {
-        gameHistory = gameHistory.slice(0, currentStep);
+      if (currentMoveIndex < fullHistory.length) {
+        fullHistory = fullHistory.slice(0, currentMoveIndex);
       }
 
-      const turn = (gameHistory.length % 2 === 0) ? 1 : 2;
-      const opponent = (turn === 1) ? 2 : 1;
+      const turn = (fullHistory.length % 2 === 0) ? 1 : 2;
+      const opponent = turn === 1 ? 2 : 1;
 
-      const nextGrid = state.grid.map(row => [...row]);
-      nextGrid[x][y] = turn;
+      const nextBoard = boardState.map(row => [...row]);
+      nextBoard[x][y] = turn;
 
       let capturedStones = [];
-      getNeighbors(x, y).forEach(n => {
-        if (nextGrid[n.x][n.y] === opponent) {
-          const { group, liberties } = getConnectedGroup(nextGrid, n.x, n.y);
-          if (liberties === 0) capturedStones = capturedStones.concat(group);
+      const neighbors = getNeighbors(x, y);
+
+      neighbors.forEach(n => {
+        if (nextBoard[n.x][n.y] === opponent) {
+          const { group, liberties } = getConnectedGroup(nextBoard, n.x, n.y);
+          if (liberties === 0) {
+            capturedStones = capturedStones.concat(group);
+          }
         }
       });
 
       if (capturedStones.length === 0) {
-        const selfInfo = getConnectedGroup(nextGrid, x, y);
+        const selfInfo = getConnectedGroup(nextBoard, x, y);
         if (selfInfo.liberties === 0) {
-          alert('자충수입니다. 이곳에는 둘 수 없습니다.');
+          alert('자충수입니다! 이곳에는 돌을 둘 수 없습니다.');
           return;
         }
       }
 
-      gameHistory.push({
-        x, y,
-        color: turn,
-        moveNum: gameHistory.length + 1
+      capturedStones.forEach(pt => {
+        nextBoard[pt.x][pt.y] = 0;
       });
 
-      currentStep = gameHistory.length;
+      const addCap = capturedStones.length;
+      
+      const newDeadBlack = deadBlackCount + (turn === 2 ? addCap : 0);
+      const newDeadWhite = deadWhiteCount + (turn === 1 ? addCap : 0);
+
+      fullHistory.push({
+        x, y,
+        color: turn,
+        moveNumber: fullHistory.length + 1,
+        boardSnapshot: nextBoard,
+        deadBlackCount: newDeadBlack,
+        deadWhiteCount: newDeadWhite,
+        alive: true
+      });
+
+      currentMoveIndex = fullHistory.length;
       updateStatus();
       drawBoard();
     }
 
     canvas.addEventListener('click', handleBoardClick);
 
-    function moveStep(delta) { goToMove(currentStep + delta); }
+    function moveStep(delta) { goToMove(currentMoveIndex + delta); }
 
-    function goToMove(targetStep) {
-      if (targetStep < 0) targetStep = 0;
-      if (targetStep > gameHistory.length) targetStep = gameHistory.length;
+    function goToMove(targetIndex) {
+      if (targetIndex < 0) targetIndex = 0;
+      if (targetIndex > fullHistory.length) targetIndex = fullHistory.length;
 
-      currentStep = targetStep;
+      currentMoveIndex = targetIndex;
       updateStatus();
       drawBoard();
     }
 
     function updateStatus() {
-      const nextTurn = (currentStep % 2 === 0) ? '⚫ 흑' : '⚪ 백';
-      turnStatus.innerText = `현재: ${currentStep}수 / 총 ${gameHistory.length}수 (다음: ${nextTurn})`;
+      const nextTurn = (currentMoveIndex % 2 === 0) ? '⚫ 흑' : '⚪ 백';
+      turnStatus.innerText = `현재: ${currentMoveIndex}수 / 총 ${fullHistory.length}수 (다음: ${nextTurn})`;
     }
 
     function copyShareUrl() {
-      if (gameHistory.length === 0 && currentStep === 0) { 
-        alert('돌을 놓은 후 주소를 복사해 주세요.'); 
-        return; 
-      }
-      const activeMoves = gameHistory.slice(0, currentStep);
-      const compressedStr = encodeMoves(activeMoves);
+      if (fullHistory.length === 0 && currentMoveIndex === 0) { alert('돌을 놓은 후 주소를 복사해 주세요.'); return; }
+      const activeHistory = fullHistory.slice(0, currentMoveIndex);
+      const movesString = activeHistory.map(h => `${h.x}_${h.y}`).join(',');
       const baseUrl = window.location.origin + window.location.pathname;
-      const shareUrl = `${baseUrl}?m=${compressedStr}`;
+      const shareUrl = `${baseUrl}?moves=${movesString}`;
 
       navigator.clipboard.writeText(shareUrl).then(() => {
-        alert('주소가 복사되었습니다.');
+        alert(`${currentMoveIndex}수까지 진행된 주소가 복사되었습니다!`);
       });
     }
 
     function captureBoard() {
       const dataURL = canvas.toDataURL('image/png');
       const downloadLink = document.createElement('a');
-      downloadLink.download = `baduk_${currentStep}moves.png`;
+      downloadLink.download = `baduk_${currentMoveIndex}moves.png`;
       downloadLink.href = dataURL;
       document.body.appendChild(downloadLink);
       downloadLink.click();
@@ -628,16 +585,16 @@
     }
 
     function exportSGF() {
-      const state = evaluateBoardAt(currentStep);
+      const { boardState } = getCurrentState();
       
       let totalStonesOnBoard = 0;
       for (let x = 0; x < BOARD_SIZE; x++) {
         for (let y = 0; y < BOARD_SIZE; y++) {
-          if (state.grid[x][y] !== 0) totalStonesOnBoard++;
+          if (boardState[x][y] !== 0) totalStonesOnBoard++;
         }
       }
 
-      if (totalStonesOnBoard === 0 && gameHistory.length === 0) { 
+      if (totalStonesOnBoard === 0 && fullHistory.length === 0) { 
         alert('바둑판에 돌이 존재하지 않습니다.'); 
         return; 
       }
@@ -649,15 +606,15 @@
 
       for (let x = 0; x < BOARD_SIZE; x++) {
         for (let y = 0; y < BOARD_SIZE; y++) {
-          if (initialBoard[x][y] === 1) addBlackCoords.push(`[${sgfCoords[x]}${sgfCoords[y]}]`);
-          else if (initialBoard[x][y] === 2) addWhiteCoords.push(`[${sgfCoords[x]}${sgfCoords[y]}]`);
+          if (baseBoardState[x][y] === 1) addBlackCoords.push(`[${sgfCoords[x]}${sgfCoords[y]}]`);
+          else if (baseBoardState[x][y] === 2) addWhiteCoords.push(`[${sgfCoords[x]}${sgfCoords[y]}]`);
         }
       }
 
       if (addBlackCoords.length > 0) sgfContent += `AB${addBlackCoords.join('')}\n`;
       if (addWhiteCoords.length > 0) sgfContent += `AW${addWhiteCoords.join('')}\n`;
 
-      gameHistory.forEach(h => {
+      fullHistory.forEach(h => {
         sgfContent += `;${h.color === 1 ? "B" : "W"}[${sgfCoords[h.x]}${sgfCoords[h.y]}]`;
       });
 
@@ -674,37 +631,51 @@
 
     function initFromUrl() {
       const urlParams = new URLSearchParams(window.location.search);
-      const compressedParam = urlParams.get('m');
-      const oldMovesParam = urlParams.get('moves');
+      const movesParam = urlParams.get('moves');
 
-      gameHistory = [];
+      fullHistory = [];
+      if (movesParam) {
+        const movePairs = movesParam.split(',');
+        let tempBoard = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
+        let turn = 1;
+        let deadBlack = 0;
+        let deadWhite = 0;
 
-      let rawMoves = [];
-      if (compressedParam) {
-        rawMoves = decodeMoves(compressedParam);
-      } else if (oldMovesParam) {
-        const movePairs = oldMovesParam.split(',');
-        rawMoves = movePairs.map(p => {
-          if (!p) return null;
-          const [x, y] = p.split('_').map(Number);
-          return { x, y };
-        }).filter(Boolean);
+        movePairs.forEach(pair => {
+          if (!pair) return;
+          const [x, y] = pair.split('_').map(Number);
+          if (!isNaN(x) && !isNaN(y) && x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE) {
+            tempBoard[x][y] = turn;
+            const opponent = turn === 1 ? 2 : 1;
+
+            let capturedStones = [];
+            getNeighbors(x, y).forEach(n => {
+              if (tempBoard[n.x][n.y] === opponent) {
+                const { group, liberties } = getConnectedGroup(tempBoard, n.x, n.y);
+                if (liberties === 0) capturedStones = capturedStones.concat(group);
+              }
+            });
+
+            capturedStones.forEach(pt => { tempBoard[pt.x][pt.y] = 0; });
+
+            if (turn === 1) deadWhite += capturedStones.length;
+            else deadBlack += capturedStones.length;
+
+            fullHistory.push({
+              x, y,
+              color: turn,
+              moveNumber: fullHistory.length + 1,
+              boardSnapshot: tempBoard.map(row => [...row]),
+              deadBlackCount: deadBlack,
+              deadWhiteCount: deadWhite,
+              alive: true
+            });
+
+            turn = opponent;
+          }
+        });
       }
-
-      let turn = 1;
-      rawMoves.forEach((pt, idx) => {
-        if (!isNaN(pt.x) && !isNaN(pt.y) && pt.x >= 0 && pt.x < BOARD_SIZE && pt.y >= 0 && pt.y < BOARD_SIZE) {
-          gameHistory.push({
-            x: pt.x,
-            y: pt.y,
-            color: turn,
-            moveNum: idx + 1
-          });
-          turn = (turn === 1) ? 2 : 1;
-        }
-      });
-
-      currentStep = gameHistory.length;
+      currentMoveIndex = fullHistory.length;
     }
 
     initFromUrl();
@@ -713,3 +684,32 @@
   </script>
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
