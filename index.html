@@ -200,7 +200,6 @@
     </div>
   </div>
 
-  <!-- 숨겨진 파일 업로드 인풋 -->
   <input type="file" id="sgfFileInput" accept=".sgf" style="display: none;" onchange="loadSGFFile(event)">
 
   <script>
@@ -521,7 +520,7 @@
       turnStatus.innerText = `현재: ${currentMoveIndex}수 / 총 ${fullHistory.length}수 (다음: ${nextTurn})`;
     }
 
-    // 2. SGF 파일 불러오기 기능
+    // --- SGF 파일 파싱 보완 ---
     function loadSGFFile(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -536,12 +535,13 @@
     }
 
     function parseSGFAndApply(sgfText) {
-      const szMatch = sgfText.match(/SZ\[(\d+)\]/);
+      // 바둑판 크기 검출 (기본 19)
+      const szMatch = sgfText.match(/SZ\[(\d+)\]/i);
       let size = 19;
       if (szMatch) size = parseInt(szMatch[1], 10);
 
       if (size !== 13 && size !== 19) {
-        alert('현재 지원되는 바둑판 크기는 13줄 또는 19줄입니다.');
+        alert(`SGF의 바둑판 크기(${size}줄)는 지원되지 않는 크기입니다. (19줄 또는 13줄만 가능)`);
         return;
       }
 
@@ -550,14 +550,15 @@
       updateBoardGeometry();
       resetBoard();
 
-      // SGF 착수 파싱 (;B[ab] 또는 ;W[cd])
-      const moveRegex = /;(B|W)\[([a-z]{2})\]/g;
+      // SGF 착수 파싱: ;B[ab] 또는 ;W[cd] 형식 추출 (대소문자 지원)
+      const moveRegex = /;(B|W)\[([a-zA-Z]{2})\]/gi;
       let match;
 
       while ((match = moveRegex.exec(sgfText)) !== null) {
-        const color = match[1] === 'B' ? 1 : 2;
-        const x = sgfCoords.indexOf(match[2][0]);
-        const y = sgfCoords.indexOf(match[2][1]);
+        const color = match[1].toUpperCase() === 'B' ? 1 : 2;
+        const coordStr = match[2].toLowerCase();
+        const x = sgfCoords.indexOf(coordStr[0]);
+        const y = sgfCoords.indexOf(coordStr[1]);
 
         if (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE) {
           const { boardState, deadBlackCount, deadWhiteCount } = getCurrentState();
@@ -594,10 +595,9 @@
       currentMoveIndex = fullHistory.length;
       updateStatus();
       drawBoard();
-      alert(`SGF 기보를 불러왔습니다. (총 ${fullHistory.length}수)`);
+      alert(`SGF 기보를 정상적으로 불러왔습니다. (${BOARD_SIZE}줄 / 총 ${fullHistory.length}수)`);
     }
 
-    // 3. 캡쳐 기능
     function captureBoard() {
       const dataURL = canvas.toDataURL('image/png');
       const downloadLink = document.createElement('a');
