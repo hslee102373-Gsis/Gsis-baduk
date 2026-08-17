@@ -2,14 +2,11 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>GSIS 웹바둑판</title>
-  <!-- 검증된 GIF 생성 라이브러리 (gifshot) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gifshot/0.3.2/gifshot.min.js"></script>
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       display: flex;
@@ -34,16 +31,16 @@
     .status-panel {
       width: 100%;
       margin-bottom: 8px;
-      padding: 6px 10px;
+      padding: 8px 12px;
       background: white;
       border-radius: 8px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.08);
       display: flex;
       gap: 8px;
       align-items: center;
-      font-size: 0.82rem;
+      font-size: 0.85rem;
       flex-wrap: wrap;
-      justify-content: space-around;
+      justify-content: space-between;
     }
 
     .stat-item {
@@ -67,10 +64,12 @@
       color: #2b6cb0;
     }
 
-    .toggle-label input {
-      width: 14px;
-      height: 14px;
-      cursor: pointer;
+    .select-size {
+      padding: 2px 4px;
+      font-size: 0.8rem;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      font-weight: bold;
     }
 
     .board-outer {
@@ -86,7 +85,7 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      touch-action: manipulation;
+      touch-action: none;
     }
 
     canvas {
@@ -113,14 +112,14 @@
 
     .action-controls {
       display: grid;
-      grid-template-columns: repeat(5, 1fr);
+      grid-template-columns: repeat(6, 1fr);
       gap: 4px;
       width: 100%;
     }
 
     button {
       padding: 8px 2px;
-      font-size: 0.75rem;
+      font-size: 0.72rem;
       border: none;
       border-radius: 5px;
       color: white;
@@ -149,12 +148,21 @@
 
     .btn-sgf { background-color: #38a169; }
     .btn-sgf:hover { background-color: #2f855a; }
+
+    .btn-load { background-color: #4c51bf; }
+    .btn-load:hover { background-color: #434190; }
   </style>
 </head>
 <body>
 
   <div class="main-container">
     <div class="status-panel">
+      <div class="stat-item">
+        <select id="boardSizeSelect" class="select-size" onchange="changeBoardSize(this.value)">
+          <option value="19" selected>19줄</option>
+          <option value="13">13줄</option>
+        </select>
+      </div>
       <div class="stat-item turn-indicator" id="turnStatus">현재: ⚫ 흑 (0수)</div>
       <div class="stat-item">
         <span>사석:</span>
@@ -162,7 +170,6 @@
         <span id="deadWhiteStones">⚪ 0</span>
       </div>
       <label class="toggle-label">
-        <!-- 기본값을 체크 해제(unchecked)로 설정 -->
         <input type="checkbox" id="toggleMoveNumbers" onchange="drawBoard()">
         수순
       </label>
@@ -183,14 +190,18 @@
       </div>
 
       <div class="action-controls">
+        <button class="btn-load" onclick="document.getElementById('sgfFileInput').click()">📂 SGF열기</button>
+        <button class="btn-sgf" onclick="exportSGF()">📁 SGF저장</button>
+        <button class="btn-capture" onclick="captureBoard()">🖼️ 캡쳐</button>
         <button class="btn-scene" onclick="convertToScene()">📷 장면도</button>
         <button class="btn-gif" id="gifBtn" onclick="createGifAnimation()">🎬 GIF</button>
         <button class="btn-share" onclick="copyShareUrl()">🔗 주소복사</button>
-        <button class="btn-capture" onclick="captureBoard()">🖼️ 캡쳐</button>
-        <button class="btn-sgf" onclick="exportSGF()">📁 SGF</button>
       </div>
     </div>
   </div>
+
+  <!-- 숨겨진 파일 업로드 인풋 -->
+  <input type="file" id="sgfFileInput" accept=".sgf" style="display: none;" onchange="loadSGFFile(event)">
 
   <script>
     const canvas = document.getElementById('board');
@@ -201,9 +212,10 @@
     const deadWhiteStonesEl = document.getElementById('deadWhiteStones');
     const gifBtn = document.getElementById('gifBtn');
 
-    const BOARD_SIZE = 19;
-    const PADDING = 18;
-    const CELL_SIZE = (canvas.width - PADDING * 2) / (BOARD_SIZE - 1);
+    let BOARD_SIZE = 19;
+    let PADDING = 18;
+    let CELL_SIZE = (canvas.width - PADDING * 2) / (BOARD_SIZE - 1);
+    let starPoints = [3, 9, 15];
 
     let fullHistory = [];
     let currentMoveIndex = 0;
@@ -212,8 +224,32 @@
     let baseDeadBlack = 0;
     let baseDeadWhite = 0;
 
-    const starPoints = [3, 9, 15];
     const sgfCoords = "abcdefghijklmnopqrstuvwxyz";
+
+    function updateBoardGeometry() {
+      CELL_SIZE = (canvas.width - PADDING * 2) / (BOARD_SIZE - 1);
+      if (BOARD_SIZE === 19) {
+        starPoints = [3, 9, 15];
+      } else if (BOARD_SIZE === 13) {
+        starPoints = [3, 6, 9];
+      }
+    }
+
+    function changeBoardSize(size) {
+      BOARD_SIZE = parseInt(size, 10);
+      updateBoardGeometry();
+      resetBoard();
+    }
+
+    function resetBoard() {
+      fullHistory = [];
+      currentMoveIndex = 0;
+      baseBoardState = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
+      baseDeadBlack = 0;
+      baseDeadWhite = 0;
+      updateStatus();
+      drawBoard();
+    }
 
     function getNeighbors(x, y) {
       const res = [];
@@ -343,11 +379,6 @@
         ctx.fillStyle = gradient;
         ctx.fill();
       } else {
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-        ctx.fillStyle = '#e8e2d8';
-        ctx.fill();
-
         const gradient = ctx.createRadialGradient(
           cx - radius * 0.32, cy - radius * 0.35, radius * 0.08,
           cx, cy, radius
@@ -365,13 +396,15 @@
       }
 
       const visibleHistory = fullHistory.slice(0, currentMoveIndex);
-      const moveInfo = visibleHistory.find(h => h.x === x && h.y === y && h.alive);
-      if (!moveInfo) return;
+      const moveInfo = [...visibleHistory].reverse().find(h => h.x === x && h.y === y);
+      
+      const { boardState } = getCurrentState();
+      if (!moveInfo || boardState[x][y] === 0) return;
 
-      const isLastMove = (moveInfo === visibleHistory[visibleHistory.length - 1]);
+      const lastMove = visibleHistory[visibleHistory.length - 1];
+      const isLastMove = (lastMove && lastMove.x === x && lastMove.y === y);
       const showNumbers = toggleMoveNumbers.checked;
 
-      // 수순 표시가 켜져 있을 때
       if (showNumbers) {
         ctx.font = `bold ${CELL_SIZE * 0.48}px 'Arial'`;
         ctx.textAlign = 'center';
@@ -379,7 +412,6 @@
         ctx.fillStyle = (color === 1) ? (isLastMove ? '#ff4d4d' : '#ffffff') : (isLastMove ? '#cc0000' : '#222222');
         ctx.fillText(moveInfo.moveNumber, cx, cy + 1);
       } 
-      // 수순 표시가 꺼져 있을 때: 마지막 수의 중앙에 선명한 빨간색 점(·) 표시
       else if (isLastMove) {
         ctx.beginPath();
         ctx.arc(cx, cy, radius * 0.22, 0, Math.PI * 2);
@@ -388,80 +420,8 @@
       }
     }
 
-    function convertToScene() {
-      if (currentMoveIndex === 0) {
-        alert('돌이 하나도 올려져 있지 않습니다.');
-        return;
-      }
-
-      if (confirm('현재 배치를 [기본 장면도]로 변환하시겠습니까?\n\n이전 수순 정보는 완전히 삭제되며, 이후부터 두는 수가 1수부터 새로 시작됩니다.')) {
-        const { boardState, deadBlackCount, deadWhiteCount } = getCurrentState();
-
-        fullHistory = [];
-        window.history.pushState({}, '', window.location.pathname);
-
-        baseBoardState = boardState.map(row => [...row]);
-        baseDeadBlack = deadBlackCount;
-        baseDeadWhite = deadWhiteCount;
-
-        currentMoveIndex = 0;
-        updateStatus();
-        drawBoard();
-        alert('장면도로 고정되었습니다! 이제부터 두는 돌은 1수부터 시작됩니다.');
-      }
-    }
-
-    async function createGifAnimation() {
-      if (fullHistory.length === 0) {
-        alert('GIF로 만들 수순(기보)이 없습니다.');
-        return;
-      }
-
-      const originalIndex = currentMoveIndex;
-      gifBtn.disabled = true;
-      gifBtn.innerText = '⏳ 생성중';
-
-      await new Promise(r => setTimeout(r, 50));
-
-      const images = [];
-      for (let i = 0; i <= fullHistory.length; i++) {
-        currentMoveIndex = i;
-        drawBoard();
-        images.push(canvas.toDataURL('image/png'));
-      }
-
-      const lastFrame = images[images.length - 1];
-      for (let k = 0; k < 10; k++) {
-        images.push(lastFrame);
-      }
-
-      gifshot.createGIF({
-        images: images,
-        gifWidth: canvas.width,
-        gifHeight: canvas.height,
-        interval: 1,
-        numWorkers: 2
-      }, function (obj) {
-        if (!obj.error) {
-          const downloadLink = document.createElement('a');
-          downloadLink.href = obj.image;
-          downloadLink.download = `baduk_game_${fullHistory.length}moves.gif`;
-          document.body.appendChild(downloadLink);
-          downloadLink.click();
-          document.body.removeChild(downloadLink);
-          alert('GIF 애니메이션이 성공적으로 생성되었습니다!');
-        } else {
-          alert('GIF 생성 중 오류가 발생했습니다.');
-        }
-
-        currentMoveIndex = originalIndex;
-        drawBoard();
-        gifBtn.disabled = false;
-        gifBtn.innerText = '🎬 GIF';
-      });
-    }
-
     function handleBoardClick(e) {
+      e.preventDefault();
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
@@ -533,10 +493,9 @@
         x, y,
         color: turn,
         moveNumber: fullHistory.length + 1,
-        boardSnapshot: nextBoard,
+        boardSnapshot: nextBoard.map(row => [...row]),
         deadBlackCount: newDeadBlack,
-        deadWhiteCount: newDeadWhite,
-        alive: true
+        deadWhiteCount: newDeadWhite
       });
 
       currentMoveIndex = fullHistory.length;
@@ -562,22 +521,87 @@
       turnStatus.innerText = `현재: ${currentMoveIndex}수 / 총 ${fullHistory.length}수 (다음: ${nextTurn})`;
     }
 
-    function copyShareUrl() {
-      if (fullHistory.length === 0 && currentMoveIndex === 0) { alert('돌을 놓은 후 주소를 복사해 주세요.'); return; }
-      const activeHistory = fullHistory.slice(0, currentMoveIndex);
-      const movesString = activeHistory.map(h => `${h.x}_${h.y}`).join(',');
-      const baseUrl = window.location.origin + window.location.pathname;
-      const shareUrl = `${baseUrl}?moves=${movesString}`;
+    // 2. SGF 파일 불러오기 기능
+    function loadSGFFile(event) {
+      const file = event.target.files[0];
+      if (!file) return;
 
-      navigator.clipboard.writeText(shareUrl).then(() => {
-        alert(`${currentMoveIndex}수까지 진행된 주소가 복사되었습니다!`);
-      });
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const content = e.target.result;
+        parseSGFAndApply(content);
+      };
+      reader.readAsText(file);
+      event.target.value = '';
     }
 
+    function parseSGFAndApply(sgfText) {
+      const szMatch = sgfText.match(/SZ\[(\d+)\]/);
+      let size = 19;
+      if (szMatch) size = parseInt(szMatch[1], 10);
+
+      if (size !== 13 && size !== 19) {
+        alert('현재 지원되는 바둑판 크기는 13줄 또는 19줄입니다.');
+        return;
+      }
+
+      BOARD_SIZE = size;
+      document.getElementById('boardSizeSelect').value = String(size);
+      updateBoardGeometry();
+      resetBoard();
+
+      // SGF 착수 파싱 (;B[ab] 또는 ;W[cd])
+      const moveRegex = /;(B|W)\[([a-z]{2})\]/g;
+      let match;
+
+      while ((match = moveRegex.exec(sgfText)) !== null) {
+        const color = match[1] === 'B' ? 1 : 2;
+        const x = sgfCoords.indexOf(match[2][0]);
+        const y = sgfCoords.indexOf(match[2][1]);
+
+        if (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE) {
+          const { boardState, deadBlackCount, deadWhiteCount } = getCurrentState();
+          const opponent = color === 1 ? 2 : 1;
+
+          const nextBoard = boardState.map(row => [...row]);
+          nextBoard[x][y] = color;
+
+          let capturedStones = [];
+          getNeighbors(x, y).forEach(n => {
+            if (nextBoard[n.x][n.y] === opponent) {
+              const { group, liberties } = getConnectedGroup(nextBoard, n.x, n.y);
+              if (liberties === 0) capturedStones = capturedStones.concat(group);
+            }
+          });
+
+          capturedStones.forEach(pt => { nextBoard[pt.x][pt.y] = 0; });
+
+          const addCap = capturedStones.length;
+          const newDeadBlack = deadBlackCount + (color === 2 ? addCap : 0);
+          const newDeadWhite = deadWhiteCount + (color === 1 ? addCap : 0);
+
+          fullHistory.push({
+            x, y,
+            color: color,
+            moveNumber: fullHistory.length + 1,
+            boardSnapshot: nextBoard.map(row => [...row]),
+            deadBlackCount: newDeadBlack,
+            deadWhiteCount: newDeadWhite
+          });
+        }
+      }
+
+      currentMoveIndex = fullHistory.length;
+      updateStatus();
+      drawBoard();
+      alert(`SGF 기보를 불러왔습니다. (총 ${fullHistory.length}수)`);
+    }
+
+    // 3. 캡쳐 기능
     function captureBoard() {
       const dataURL = canvas.toDataURL('image/png');
       const downloadLink = document.createElement('a');
-      downloadLink.download = `baduk_${currentMoveIndex}moves.png`;
+      downloadLink.download = `baduk_${BOARD_SIZE}x${BOARD_SIZE}_${currentMoveIndex}moves.png`;
       downloadLink.href = dataURL;
       document.body.appendChild(downloadLink);
       downloadLink.click();
@@ -586,7 +610,6 @@
 
     function exportSGF() {
       const { boardState } = getCurrentState();
-      
       let totalStonesOnBoard = 0;
       for (let x = 0; x < BOARD_SIZE; x++) {
         for (let y = 0; y < BOARD_SIZE; y++) {
@@ -599,20 +622,7 @@
         return; 
       }
 
-      let sgfContent = "(;GM[1]FF[4]CA[UTF-8]AP[WebBaduk]SZ[19]\nPB[Black]PW[White]\n";
-
-      let addBlackCoords = [];
-      let addWhiteCoords = [];
-
-      for (let x = 0; x < BOARD_SIZE; x++) {
-        for (let y = 0; y < BOARD_SIZE; y++) {
-          if (baseBoardState[x][y] === 1) addBlackCoords.push(`[${sgfCoords[x]}${sgfCoords[y]}]`);
-          else if (baseBoardState[x][y] === 2) addWhiteCoords.push(`[${sgfCoords[x]}${sgfCoords[y]}]`);
-        }
-      }
-
-      if (addBlackCoords.length > 0) sgfContent += `AB${addBlackCoords.join('')}\n`;
-      if (addWhiteCoords.length > 0) sgfContent += `AW${addWhiteCoords.join('')}\n`;
+      let sgfContent = `(;GM[1]FF[4]CA[UTF-8]AP[WebBaduk]SZ[${BOARD_SIZE}]\nPB[Black]PW[White]\n`;
 
       fullHistory.forEach(h => {
         sgfContent += `;${h.color === 1 ? "B" : "W"}[${sgfCoords[h.x]}${sgfCoords[h.y]}]`;
@@ -622,16 +632,108 @@
 
       const blob = new Blob([sgfContent], { type: "application/x-go-sgf;charset=utf-8" });
       const downloadLink = document.createElement("a");
-      downloadLink.download = `baduk_scene_${totalStonesOnBoard}stones.sgf`;
+      downloadLink.download = `baduk_${BOARD_SIZE}x${BOARD_SIZE}_${fullHistory.length}moves.sgf`;
       downloadLink.href = URL.createObjectURL(blob);
       document.body.appendChild(downloadLink);
       downloadLink.click();
       document.body.removeChild(downloadLink);
     }
 
+    function convertToScene() {
+      if (currentMoveIndex === 0) {
+        alert('돌이 하나도 올려져 있지 않습니다.');
+        return;
+      }
+
+      if (confirm('현재 배치를 [기본 장면도]로 변환하시겠습니까?\n\n이전 수순 정보는 완전히 삭제되며, 이후부터 두는 수가 1수부터 새로 시작됩니다.')) {
+        const { boardState, deadBlackCount, deadWhiteCount } = getCurrentState();
+
+        fullHistory = [];
+        window.history.pushState({}, '', window.location.pathname);
+
+        baseBoardState = boardState.map(row => [...row]);
+        baseDeadBlack = deadBlackCount;
+        baseDeadWhite = deadWhiteCount;
+
+        currentMoveIndex = 0;
+        updateStatus();
+        drawBoard();
+        alert('장면도로 고정되었습니다! 이제부터 두는 돌은 1수부터 시작됩니다.');
+      }
+    }
+
+    async function createGifAnimation() {
+      if (fullHistory.length === 0) {
+        alert('GIF로 만들 수순(기보)이 없습니다.');
+        return;
+      }
+
+      const originalIndex = currentMoveIndex;
+      gifBtn.disabled = true;
+      gifBtn.innerText = '⏳ 생성중';
+
+      await new Promise(r => setTimeout(r, 50));
+
+      const images = [];
+      for (let i = 0; i <= fullHistory.length; i++) {
+        currentMoveIndex = i;
+        drawBoard();
+        images.push(canvas.toDataURL('image/png'));
+      }
+
+      const lastFrame = images[images.length - 1];
+      for (let k = 0; k < 5; k++) {
+        images.push(lastFrame);
+      }
+
+      gifshot.createGIF({
+        images: images,
+        gifWidth: 400,
+        gifHeight: 400,
+        interval: 0.8,
+        numWorkers: 2
+      }, function (obj) {
+        if (!obj.error) {
+          const downloadLink = document.createElement('a');
+          downloadLink.href = obj.image;
+          downloadLink.download = `baduk_game_${fullHistory.length}moves.gif`;
+          document.body.appendChild(downloadLink);
+          downloadLink.click();
+          document.body.removeChild(downloadLink);
+          alert('GIF 애니메이션이 성공적으로 생성되었습니다!');
+        } else {
+          alert('GIF 생성 중 오류가 발생했습니다.');
+        }
+
+        currentMoveIndex = originalIndex;
+        drawBoard();
+        gifBtn.disabled = false;
+        gifBtn.innerText = '🎬 GIF';
+      });
+    }
+
+    function copyShareUrl() {
+      if (fullHistory.length === 0 && currentMoveIndex === 0) { alert('돌을 놓은 후 주소를 복사해 주세요.'); return; }
+      const activeHistory = fullHistory.slice(0, currentMoveIndex);
+      const movesString = activeHistory.map(h => `${h.x}_${h.y}`).join(',');
+      const baseUrl = window.location.origin + window.location.pathname;
+      const shareUrl = `${baseUrl}?moves=${movesString}&sz=${BOARD_SIZE}`;
+
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        alert(`${currentMoveIndex}수까지 진행된 주소가 복사되었습니다!`);
+      });
+    }
+
     function initFromUrl() {
       const urlParams = new URLSearchParams(window.location.search);
       const movesParam = urlParams.get('moves');
+      const szParam = urlParams.get('sz');
+
+      if (szParam === '13') {
+        BOARD_SIZE = 13;
+        document.getElementById('boardSizeSelect').value = '13';
+        updateBoardGeometry();
+      }
 
       fullHistory = [];
       if (movesParam) {
@@ -667,8 +769,7 @@
               moveNumber: fullHistory.length + 1,
               boardSnapshot: tempBoard.map(row => [...row]),
               deadBlackCount: deadBlack,
-              deadWhiteCount: deadWhite,
-              alive: true
+              deadWhiteCount: deadWhite
             });
 
             turn = opponent;
@@ -684,32 +785,3 @@
   </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
