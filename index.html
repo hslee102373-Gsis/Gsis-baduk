@@ -520,7 +520,7 @@
       turnStatus.innerText = `현재: ${currentMoveIndex}수 / 총 ${fullHistory.length}수 (다음: ${nextTurn})`;
     }
 
-    // --- SGF 파일 파싱 보완 ---
+    // --- 개편된 SGF 파일 불러오기 기능 ---
     function loadSGFFile(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -535,7 +535,7 @@
     }
 
     function parseSGFAndApply(sgfText) {
-      // 바둑판 크기 검출 (기본 19)
+      // 1. 바둑판 크기 검출
       const szMatch = sgfText.match(/SZ\[(\d+)\]/i);
       let size = 19;
       if (szMatch) size = parseInt(szMatch[1], 10);
@@ -550,15 +550,23 @@
       updateBoardGeometry();
       resetBoard();
 
-      // SGF 착수 파싱: ;B[ab] 또는 ;W[cd] 형식 추출 (대소문자 지원)
-      const moveRegex = /;(B|W)\[([a-zA-Z]{2})\]/gi;
-      let match;
+      // 2. 노드 분할 파싱 (각 ; 노드별로 B/W 수순 분석)
+      const nodes = sgfText.split(';');
 
-      while ((match = moveRegex.exec(sgfText)) !== null) {
-        const color = match[1].toUpperCase() === 'B' ? 1 : 2;
-        const coordStr = match[2].toLowerCase();
-        const x = sgfCoords.indexOf(coordStr[0]);
-        const y = sgfCoords.indexOf(coordStr[1]);
+      nodes.forEach(node => {
+        // B[...] 또는 W[...] 형태 탐색
+        const moveMatch = node.match(/(B|W)\[([a-zA-Z]{2})?\]/i);
+        if (!moveMatch) return;
+
+        const colorStr = moveMatch[1].toUpperCase();
+        const coordStr = moveMatch[2];
+
+        // 패스(Pass)이거나 좌표가 없으면 건너뜀
+        if (!coordStr || coordStr.length < 2) return;
+
+        const color = (colorStr === 'B') ? 1 : 2;
+        const x = sgfCoords.indexOf(coordStr[0].toLowerCase());
+        const y = sgfCoords.indexOf(coordStr[1].toLowerCase());
 
         if (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE) {
           const { boardState, deadBlackCount, deadWhiteCount } = getCurrentState();
@@ -590,12 +598,12 @@
             deadWhiteCount: newDeadWhite
           });
         }
-      }
+      });
 
       currentMoveIndex = fullHistory.length;
       updateStatus();
       drawBoard();
-      alert(`SGF 기보를 정상적으로 불러왔습니다. (${BOARD_SIZE}줄 / 총 ${fullHistory.length}수)`);
+      alert(`SGF 기보를 성공적으로 불러왔습니다! (${BOARD_SIZE}줄 / 총 ${fullHistory.length}수)`);
     }
 
     function captureBoard() {
