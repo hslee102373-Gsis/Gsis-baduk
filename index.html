@@ -103,14 +103,7 @@
       gap: 6px;
     }
 
-    .nav-controls {
-      display: grid;
-      grid-template-columns: repeat(6, 1fr);
-      gap: 4px;
-      width: 100%;
-    }
-
-    .action-controls {
+    .nav-controls, .action-controls {
       display: grid;
       grid-template-columns: repeat(6, 1fr);
       gap: 4px;
@@ -230,24 +223,20 @@
     const sgfCoords = "abcdefghijklmnopqrstuvwxyz";
 
     function updateBoardGeometry() {
+      // 바둑판 크기가 작아질수록 셀 크기가 커지므로 PADDING을 동적으로 확대 계산
+      // 셀 직경의 절반(돌 반지름) 이상 여백이 확보되도록 설정
+      const approximateCellSize = canvas.width / BOARD_SIZE;
+      PADDING = Math.max(18, Math.round(approximateCellSize * 0.52));
+
       CELL_SIZE = (canvas.width - PADDING * 2) / (BOARD_SIZE - 1);
       
-      // 크기별 화점 설정
-      if (BOARD_SIZE === 21) {
-        starPoints = [3, 10, 17];
-      } else if (BOARD_SIZE === 19) {
-        starPoints = [3, 9, 15];
-      } else if (BOARD_SIZE === 15) {
-        starPoints = [3, 7, 11];
-      } else if (BOARD_SIZE === 13) {
-        starPoints = [3, 6, 9];
-      } else if (BOARD_SIZE === 11) {
-        starPoints = [2, 5, 8];
-      } else if (BOARD_SIZE === 9) {
-        starPoints = [2, 4, 6];
-      } else {
-        starPoints = [];
-      }
+      if (BOARD_SIZE === 21) starPoints = [3, 10, 17];
+      else if (BOARD_SIZE === 19) starPoints = [3, 9, 15];
+      else if (BOARD_SIZE === 15) starPoints = [3, 7, 11];
+      else if (BOARD_SIZE === 13) starPoints = [3, 6, 9];
+      else if (BOARD_SIZE === 11) starPoints = [2, 5, 8];
+      else if (BOARD_SIZE === 9) starPoints = [2, 4, 6];
+      else starPoints = [];
     }
 
     function changeBoardSize(size) {
@@ -398,11 +387,11 @@
           cx - radius * 0.32, cy - radius * 0.35, radius * 0.08,
           cx, cy, radius
         );
-        gradient.addColorStop(0, '#ffffff');       
-        gradient.addColorStop(0.25, '#fbf8f3');    
-        gradient.addColorStop(0.75, '#eae3d5');    
-        gradient.addColorStop(0.93, '#d1c7b7');    
-        gradient.addColorStop(1, '#a89c8a');       
+        gradient.addColorStop(0, '#ffffff');        
+        gradient.addColorStop(0.25, '#fbf8f3');     
+        gradient.addColorStop(0.75, '#eae3d5');     
+        gradient.addColorStop(0.93, '#d1c7b7');     
+        gradient.addColorStop(1, '#a89c8a');        
 
         ctx.beginPath();
         ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -436,7 +425,7 @@
     }
 
     function handleBoardClick(e) {
-      e.preventDefault();
+      if (e.cancelable) e.preventDefault();
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
@@ -519,6 +508,7 @@
     }
 
     canvas.addEventListener('click', handleBoardClick);
+    canvas.addEventListener('touchstart', handleBoardClick, { passive: false });
 
     function moveStep(delta) { goToMove(currentMoveIndex + delta); }
 
@@ -556,7 +546,7 @@
 
       const validSizes = [9, 11, 13, 15, 19, 21];
       if (!validSizes.includes(size)) {
-        alert(`SGF의 바둑판 크기(${size}줄)는 현재 지원되는 옵션(9, 11, 13, 15, 19, 21줄)이 아닙니다.`);
+        alert(`SGF의 바둑판 크기(${size}줄)는 지원되는 옵션(9, 11, 13, 15, 19, 21줄)이 아닙니다.`);
         return;
       }
 
@@ -651,7 +641,9 @@
       let sgfContent = `(;GM[1]FF[4]CA[UTF-8]AP[WebBaduk]SZ[${BOARD_SIZE}]\nPB[Black]PW[White]\n`;
 
       fullHistory.forEach(h => {
-        sgfContent += `;${h.color === 1 ? "B" : "W"}[${sgfCoords[h.x]}${sgfCoords[h.y]}]`;
+        if (h.x < sgfCoords.length && h.y < sgfCoords.length) {
+          sgfContent += `;${h.color === 1 ? "B" : "W"}[${sgfCoords[h.x]}${sgfCoords[h.y]}]`;
+        }
       });
 
       sgfContent += ")";
@@ -662,7 +654,7 @@
       downloadLink.href = URL.createObjectURL(blob);
       document.body.appendChild(downloadLink);
       downloadLink.click();
-      downloadLink.removeChild(downloadLink);
+      document.body.removeChild(downloadLink);
     }
 
     function convertToScene() {
@@ -813,11 +805,3 @@
   </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
